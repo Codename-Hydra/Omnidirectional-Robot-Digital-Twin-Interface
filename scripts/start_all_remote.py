@@ -10,11 +10,11 @@ import time
 import sys
 
 # Configuration
-JETSON_IP = "10.30.117.199"
+JETSON_IP = "192.168.1.105"
 JETSON_USER = "humanoid"
 JETSON_PASS = "111111"
 
-ORANGE_IP = "10.30.117.200"
+ORANGE_IP = "192.168.1.20"
 ORANGE_USER = "orange"
 ORANGE_PASS = "111111"
 

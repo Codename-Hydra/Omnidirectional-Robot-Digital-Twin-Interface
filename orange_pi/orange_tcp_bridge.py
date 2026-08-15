@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """
-Orange Pi TCP Server + Serial Bridge
-====================================
-Receives YOLO commands via TCP from Jetson and forwards to ESP32 via serial.
-Also publishes telemetry to ROS2 for laptop monitoring.
+Orange Pi TCP Server + Serial Bridge + ROS2 CMD_VEL
+=====================================================
+Receives commands from:
+  1. TCP (port 5555) from Jetson — YOLO tracking commands
+  2. /cmd_vel (ROS2 Twist) from laptop — gamepad/teleop commands
+
+Forwards to ESP32 via serial.
+Publishes telemetry to ROS2 for laptop dashboard monitoring.
 """
 
 import socket
@@ -34,21 +38,36 @@ class TCPToSerial(Node):
             self.get_logger().error(f"Serial connection failed: {e}")
             self.ser = None
         
-        # Telemetry publishers
+        # Telemetry publishers (original topics)
         self.battery_pub = self.create_publisher(BatteryState, '/battery_status', 10)
         self.motor_pub = self.create_publisher(JointState, '/motor_status', 10)
         self.velocity_pub = self.create_publisher(Twist, '/robot_velocity', 10)
+        
+        # Dashboard-compatible telemetry publisher
+        self.wheel_states_pub = self.create_publisher(
+            JointState, '/brone/wheel_states', 10)
         
         # State
         self.last_vx = 0.0
         self.last_vy = 0.0
         self.last_w = 0.0
+        self.cmd_source = 'NONE'  # Track command source: TCP, ROS, NONE
         
         # Logging state
         self.telemetry_count = 0
         
         # Telemetry timer (5Hz to reduce network load)
         self.telemetry_timer = self.create_timer(0.2, self.publish_telemetry)
+
+        # ---- /cmd_vel Subscriber (ROS2 gamepad/teleop) ----
+        self.MAX_ROS_LIN_VEL = 0.5  # m/s → full PWM (63)
+        self.cmd_vel_sub = self.create_subscription(
+            Twist,
+            '/cmd_vel',
+            self.cmd_vel_callback,
+            10
+        )
+        self.get_logger().info("✓ Subscribed to /cmd_vel (ROS2 teleop)")
 
         # System Enabled State (Start/Stop Program)
         self.system_enabled = True
@@ -73,7 +92,7 @@ class TCPToSerial(Node):
         except Exception as e:
             self.get_logger().error(f"TCP Server Failed to Start: {e}")
             
-        self.get_logger().info("Orange Pi Bridge Ready (TCP Only Mode)")
+        self.get_logger().info("Orange Pi Bridge Ready (TCP + ROS2 Mode)")
 
     def tcp_server_loop(self):
         """TCP server accepting connections from Jetson"""
@@ -110,6 +129,28 @@ class TCPToSerial(Node):
             except Exception as e:
                 self.get_logger().error(f"TCP error: {e}")
                 time.sleep(1)
+
+    def cmd_vel_callback(self, msg):
+        """Handle /cmd_vel from ROS2 (gamepad/teleop)"""
+        if not self.system_enabled:
+            return
+        
+        # Map m/s → PWM range (0-63)
+        # MAX_ROS_LIN_VEL (0.5 m/s) → 63 PWM
+        scale = 63.0 / self.MAX_ROS_LIN_VEL
+        
+        Vx = msg.linear.x * scale
+        Vy = msg.linear.y * scale
+        W = msg.angular.z * 5.0  # Match YOLO rotation scaling
+        
+        # Apply deadzone
+        if abs(Vx) < 5:
+            Vx = 0
+        if abs(Vy) < 5:
+            Vy = 0
+        
+        self.cmd_source = 'ROS'
+        self.send_robot_command(Vx, Vy, W)
 
     def enable_callback(self, msg):
         """Handle enabling/disabling of robot"""
@@ -165,6 +206,7 @@ class TCPToSerial(Node):
         if abs(Vx) < 5: Vx = 0
         if abs(Vy) < 5: Vy = 0
         
+        self.cmd_source = 'TCP'
         self.send_robot_command(Vx, Vy, W)
     
     def publish_telemetry(self):
@@ -173,7 +215,9 @@ class TCPToSerial(Node):
         # Heartbeat
         self.telemetry_count += 1
         if self.telemetry_count % 25 == 0:
-            self.get_logger().info(f"System Active (TCP Mode) | Vx={self.last_vx:.2f}, Vy={self.last_vy:.2f}")
+            src = self.cmd_source
+            self.get_logger().info(
+                f"System Active ({src}) | Vx={self.last_vx:.2f}, Vy={self.last_vy:.2f}")
             
         # Battery
         battery_msg = BatteryState()
@@ -187,23 +231,9 @@ class TCPToSerial(Node):
         battery_msg.present = True
         self.battery_pub.publish(battery_msg)
         
-        # Motors
-        motor_msg = JointState()
-        motor_msg.header.stamp = self.get_clock().now().to_msg()
-        motor_msg.header.frame_id = "base_link"
-        motor_msg.name = ['wheel1', 'wheel2', 'wheel3', 'wheel4']
-        motor_msg.position = []
-        
         # Calculate individual wheel speeds (Mecanum Kinematics)
-        # Mapping:
-        # 1: FL (Front Left)  = Vx + Vy + W
-        # 2: FR (Front Right) = Vx - Vy - W
-        # 3: RL (Rear Left)   = Vx - Vy + W
-        # 4: RR (Rear Right)  = Vx + Vy - W
-        
-        # Telemetry: Invert VX/VY for ROS/Webots (Physical Robot is correct, Webots is inverted)
-        vx = -self.last_vx * 10.0  # INVERTED
-        vy = -self.last_vy * 10.0  # INVERTED
+        vx = -self.last_vx * 10.0
+        vy = -self.last_vy * 10.0
         w  = self.last_w  * 10.0
 
         v1 = vx + vy + w  # FL
@@ -211,23 +241,40 @@ class TCPToSerial(Node):
         v3 = vx - vy + w  # RL
         v4 = vx + vy - w  # RR
         
+        # Motors (original topic)
+        motor_msg = JointState()
+        motor_msg.header.stamp = self.get_clock().now().to_msg()
+        motor_msg.header.frame_id = "base_link"
+        motor_msg.name = ['wheel1', 'wheel2', 'wheel3', 'wheel4']
+        motor_msg.position = []
         motor_msg.velocity = [float(v1), float(v2), float(v3), float(v4)]
-        
-        # Simulated Torque (Effort) based on velocity
-        # Ideally this would come from motor drivers, but we estimate it
         motor_msg.effort = [
             abs(float(v1)) * 2.0,
             abs(float(v2)) * 2.0,
             abs(float(v3)) * 2.0,
             abs(float(v4)) * 2.0
         ]
-        
         self.motor_pub.publish(motor_msg)
+        
+        # Dashboard-compatible wheel states (/brone/wheel_states)
+        wheel_msg = JointState()
+        wheel_msg.header.stamp = self.get_clock().now().to_msg()
+        wheel_msg.header.frame_id = "base_link"
+        wheel_msg.name = ['wheel_FL', 'wheel_FR', 'wheel_RL', 'wheel_RR']
+        wheel_msg.position = []
+        wheel_msg.velocity = [float(v1), float(v2), float(v3), float(v4)]
+        wheel_msg.effort = [
+            abs(float(v1)) * 0.2,
+            abs(float(v2)) * 0.2,
+            abs(float(v3)) * 0.2,
+            abs(float(v4)) * 0.2
+        ]
+        self.wheel_states_pub.publish(wheel_msg)
         
         # Velocity
         velocity_msg = Twist()
-        velocity_msg.linear.x = -self.last_vx  # INVERTED
-        velocity_msg.linear.y = -self.last_vy  # INVERTED
+        velocity_msg.linear.x = -self.last_vx
+        velocity_msg.linear.y = -self.last_vy
         velocity_msg.linear.z = 0.0
         velocity_msg.angular.x = 0.0
         velocity_msg.angular.y = 0.0

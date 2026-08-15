@@ -104,6 +104,11 @@ class WebSocketManager {
     private onDataCallback: ((data: RobotData) => void) | null = null;
     private onConnectCallback: (() => void) | null = null;
     private onDisconnectCallback: (() => void) | null = null;
+    private onLogCallback: ((message: string, timestamp?: string) => void) | null = null;
+
+    setOnLog(cb: (message: string, timestamp?: string) => void): void {
+        this.onLogCallback = cb;
+    }
 
     connect(): void {
         if (this.ws?.readyState === WebSocket.OPEN) return;
@@ -121,8 +126,18 @@ class WebSocketManager {
 
             this.ws.onmessage = (event) => {
                 try {
-                    const data: RobotData = JSON.parse(event.data);
-                    this.onDataCallback?.(data);
+                    const parsed = JSON.parse(event.data);
+                    if (parsed.type === 'log') {
+                        this.onLogCallback?.(parsed.message, parsed.timestamp);
+                        return;
+                    }
+                    if (parsed.type === 'telemetry') {
+                        this.onDataCallback?.(parsed.data);
+                        return;
+                    }
+                    if (parsed.timestamp && parsed.electrical) {
+                        this.onDataCallback?.(parsed as RobotData);
+                    }
                 } catch (err) {
                     console.error('[WS] Failed to parse message:', err);
                 }
@@ -236,12 +251,11 @@ document.addEventListener('DOMContentLoaded', function () {
         return gradient;
     }
 
-    function logToTerminal(message: string): void {
+    function logToTerminal(message: string, customTime?: string): void {
         const terminalWindow = document.querySelector('.terminal-logs');
         if (!terminalWindow) return;
 
-        const now = new Date();
-        const timeString = now.toLocaleTimeString('en-GB', { hour12: false });
+        const timeString = customTime || new Date().toLocaleTimeString('en-GB', { hour12: false });
 
         const logLine = document.createElement('div');
         logLine.className = 'log-line';
@@ -283,7 +297,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const chartData: ChartDataConfig = {
         power: createModeData('Power', '#FF6B9C', 'rgba(255, 107, 156, 0.1)', 'W', 0, 400),
-        voltage: createModeData('Voltage', '#D56BFF', 'rgba(213, 107, 255, 0.1)', 'V', 20, 24),
+        voltage: createModeData('Voltage', '#D56BFF', 'rgba(213, 107, 255, 0.1)', 'V', 10.5, 13.0),
         current: createModeData('Current', '#4ADE80', 'rgba(74, 222, 128, 0.1)', 'A', 0, 15),
         torque: {
             type: 'multi',
@@ -979,7 +993,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const batterySpecs: { [key: string]: { nominal: number, max: number, min: number, cells: number } } = {
         '2S': { nominal: 7.4, max: 8.4, min: 6.0, cells: 2 },
-        '3S': { nominal: 11.1, max: 12.6, min: 9.0, cells: 3 },
+        '3S': { nominal: 11.1, max: 12.6, min: 11.0, cells: 3 },
         '4S': { nominal: 14.8, max: 16.8, min: 12.0, cells: 4 }
     };
 

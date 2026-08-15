@@ -68,8 +68,8 @@ class DITERTahap6WebSocketBridge(BroneDiterMonitor):
         self.enable_pub = self.telemetry_node.create_publisher(Bool, '/system/enable', 10)
         
         # Real Ping Measurement
-        self.ping_ip = "10.30.117.200"  # Orange Pi
-        self.current_ping_ms = 0
+        self.ping_ip = "192.168.1.20"  # Orange Pi
+        self.latency_ms = 0.0
         self.ping_thread = threading.Thread(target=self._run_ping_monitor, daemon=True)
         self.ping_thread.start()
 

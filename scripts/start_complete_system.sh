@@ -80,10 +80,9 @@ else
 fi
 
 print_header "System Started Successfully"
-echo ""
-echo "Running services:"
-echo "  • Orange Pi (10.30.117.200): TCP Bridge"
-echo "  • Jetson (10.30.117.199): YOLO Detection"
+echo "  • Jetson Nano (192.168.1.51): YOLOv8 Node"
+echo "  • Orange Pi (192.168.1.20): TCP Bridge"
+echo "  • Laptop (Local): UI, Webots, Sync Server"
 echo "  • Digital Twin UI: http://localhost:5173"
 echo "  • Webots: Opening..."
 echo ""
