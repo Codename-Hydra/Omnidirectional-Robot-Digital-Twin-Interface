@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-\"\"\"
+"""
 Jetson Unified Robot Bridge Node (ROS 2 Humble)
 Precision Kinematics, 3S LiPo Battery Monitor (11.0V - 12.6V), and Serial Interface
-\"\"\"
+"""
 
 import os
 import time
@@ -102,8 +102,8 @@ class JetsonRobotBridge(Node):
         self.cur_w  = msg.angular.z
 
         forward_pwm = msg.linear.x * (255.0 / MAX_LINEAR) / 2.0
-        # Di invert sesuai arah fisik robot (Strafe)
-        lateral_pwm = -msg.linear.y * (255.0 / MAX_LINEAR) / 2.0
+        # Strafe: linear.y > 0 adalah Kiri (rawX > 127), linear.y < 0 adalah Kanan (rawX < 127)
+        lateral_pwm = msg.linear.y * (255.0 / MAX_LINEAR) / 2.0
         angular_pwm = msg.angular.z * (255.0 / MAX_ANGULAR) / 2.0
 
         if abs(forward_pwm) < LINEAR_DEADBAND_PWM: forward_pwm = 0.0
@@ -121,7 +121,7 @@ class JetsonRobotBridge(Node):
         self.send_serial_packet(val_x, val_y, val_w)
 
     def send_serial_packet(self, x, y, w):
-        packet = f"<{x},{y},{w}>\\n"
+        packet = f"<{x},{y},{w}>\n"
         if not self.ser or not self.ser.is_open:
             self.connect_serial()
             
@@ -152,30 +152,18 @@ class JetsonRobotBridge(Node):
                 self._mock_idle = True
 
     def read_jetson_voltage(self):
-        # Baca sensor INA3221 internal Jetson jika tersedia
-        try:
-            with open("/sys/bus/i2c/drivers/ina3221/1-0040/hwmon/hwmon1/in1_input", "r") as f:
-                mv = float(f.read().strip())
-                # Jika supply dari buck converter 5V (yang ditenagai 3S 12V), gunakan model rasio 3S realistis
-                # Jetson VDD_IN = 5.1V. Tegangan baterai fisik 3S LiPo = 11.0V - 12.6V
-        except:
-            pass
-
-        # Real-time discharge integration
         now = time.time()
         dt = now - self.last_battery_update
         self.last_battery_update = now
 
         active_power = (abs(self.cur_vx) + abs(self.cur_vy) + abs(self.cur_w)) * 1.8 + 0.45
-        # Perlahan mendischarge simulasi berbasis beban nyata (Ah consumed)
-        discharge_rate = (active_power / 12.0) / (BATTERY_CAPACITY_AH * 3600.0) # fraction per second
+        discharge_rate = (active_power / 12.0) / (BATTERY_CAPACITY_AH * 3600.0)
         self.simulated_voltage = max(V_MIN_3S, self.simulated_voltage - (discharge_rate * (V_MAX_3S - V_MIN_3S) * dt))
         return self.simulated_voltage, active_power
 
     def telemetry_callback(self):
         voltage, current = self.read_jetson_voltage()
         
-        # 1. 3S Battery Telemetry (11.0V - 12.6V)
         soc = max(0.0, min(100.0, ((voltage - V_MIN_3S) / (V_MAX_3S - V_MIN_3S)) * 100.0))
         
         bat_msg = BatteryState()
@@ -186,13 +174,10 @@ class JetsonRobotBridge(Node):
         bat_msg.percentage = float(soc)
         bat_msg.present = True
         
-        # Cell voltages (3S = 3 cells)
         cell_v = float(voltage / 3.0)
         bat_msg.cell_voltage = [cell_v, cell_v, cell_v]
         self.pub_battery.publish(bat_msg)
 
-        # 2. Precision Motor Telemetry
-        # Physical mapping: FL(1), FR(2), BL(3), BR(4)
         m1 = self.cur_vx - self.cur_vy - self.cur_w
         m2 = self.cur_vx + self.cur_vy + self.cur_w
         m3 = self.cur_vx + self.cur_vy - self.cur_w
@@ -211,7 +196,6 @@ class JetsonRobotBridge(Node):
         ]
         self.pub_motors.publish(motor_msg)
 
-        # 3. Robot Velocity Feedback
         vel_msg = Twist()
         vel_msg.linear.x = float(self.cur_vx)
         vel_msg.linear.y = float(self.cur_vy)

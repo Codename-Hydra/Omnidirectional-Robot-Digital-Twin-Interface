@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 WASD Keyboard Teleop Node for Omnidirectional Mecanum Robot
-Conforming with physical wheel kinematics
+Conforming with ROS 2 REP-103 standard and physical robot kinematics
 
 Controls:
   [W] : Maju (Forward)           [Q] : Putar Kiri / CCW
@@ -96,23 +96,23 @@ def main():
                 changed = True
             elif key in ['a', 'A']:
                 node.vx = 0.0
-                node.vy = -node.linear_speed  # Dibalik sesuai arah fisik robot (Strafe Kiri)
+                node.vy = node.linear_speed   # Strafe Kiri (vy > 0 -> rawX > 127)
                 node.w = 0.0
                 changed = True
             elif key in ['d', 'D']:
                 node.vx = 0.0
-                node.vy = node.linear_speed   # Dibalik sesuai arah fisik robot (Strafe Kanan)
+                node.vy = -node.linear_speed  # Strafe Kanan (vy < 0 -> rawX < 127)
                 node.w = 0.0
                 changed = True
             elif key in ['q', 'Q']:
                 node.vx = 0.0
                 node.vy = 0.0
-                node.w = node.angular_speed   # Putar Kiri / CCW
+                node.w = node.angular_speed   # Putar Kiri / CCW (w > 0 -> rawW > 127)
                 changed = True
             elif key in ['e', 'E']:
                 node.vx = 0.0
                 node.vy = 0.0
-                node.w = -node.angular_speed  # Putar Kanan / CW
+                node.w = -node.angular_speed  # Putar Kanan / CW (w < 0 -> rawW < 127)
                 changed = True
             elif key in [' ', 'x', 'X', 'k', 'K']:
                 node.vx = 0.0
@@ -137,8 +137,8 @@ def main():
                 state = "STOP"
                 if node.vx > 0: state = "⬆️  MAJU (Forward)"
                 elif node.vx < 0: state = "⬇️  MUNDUR (Backward)"
-                elif node.vy < 0: state = "⬅️  GESER KIRI (Strafe Left)"
-                elif node.vy > 0: state = "➡️  GESER KANAN (Strafe Right)"
+                elif node.vy > 0: state = "⬅️  GESER KIRI (Strafe Left)"
+                elif node.vy < 0: state = "➡️  GESER KANAN (Strafe Right)"
                 elif node.w > 0: state = "↺  PUTAR KIRI (CCW)"
                 elif node.w < 0: state = "↻  PUTAR KANAN (CW)"
                 

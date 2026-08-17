@@ -219,8 +219,8 @@ if ROS2_AVAILABLE:
                 action = []
                 if msg.linear.x > 0: action.append(f"MAJU ({msg.linear.x:+.1f})")
                 elif msg.linear.x < 0: action.append(f"MUNDUR ({msg.linear.x:+.1f})")
-                if msg.linear.y > 0: action.append(f"STRAFE KANAN ({msg.linear.y:+.1f})")
-                elif msg.linear.y < 0: action.append(f"STRAFE KIRI ({msg.linear.y:+.1f})")
+                if msg.linear.y > 0: action.append(f"STRAFE KIRI ({msg.linear.y:+.1f})")
+                elif msg.linear.y < 0: action.append(f"STRAFE KANAN ({msg.linear.y:+.1f})")
                 if msg.angular.z > 0: action.append(f"PUTAR KIRI ({msg.angular.z:+.1f})")
                 elif msg.angular.z < 0: action.append(f"PUTAR KANAN ({msg.angular.z:+.1f})")
                 
