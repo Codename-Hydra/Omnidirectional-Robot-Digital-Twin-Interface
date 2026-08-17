@@ -102,8 +102,8 @@ class JetsonRobotBridge(Node):
         self.cur_w  = msg.angular.z
 
         forward_pwm = msg.linear.x * (255.0 / MAX_LINEAR) / 2.0
-        # Strafe: linear.y > 0 adalah Kiri (rawX > 127), linear.y < 0 adalah Kanan (rawX < 127)
-        lateral_pwm = msg.linear.y * (255.0 / MAX_LINEAR) / 2.0
+        # Inversi sinyal hardware: pada sasis robot ini, rawX < 127 = KIRI, rawX > 127 = KANAN
+        lateral_pwm = -msg.linear.y * (255.0 / MAX_LINEAR) / 2.0
         angular_pwm = msg.angular.z * (255.0 / MAX_ANGULAR) / 2.0
 
         if abs(forward_pwm) < LINEAR_DEADBAND_PWM: forward_pwm = 0.0
